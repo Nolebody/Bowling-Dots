@@ -26,7 +26,7 @@
   table { width:100%; border-collapse:collapse; min-width:980px; }
   th, td { padding:8px; border-top:1px solid #262626; vertical-align:top; background:#0f0f0f; }
   th { color:#cfcfcf; text-align:left; }
-  thead th { position: sticky; top: 0; z-index: 5; background:#0f0f0f; } /* sticky header row */
+  thead th { position: sticky; top: 0; z-index: 5; background:#0f0f0f; }
   .num { text-align:right; font-variant-numeric: tabular-nums; }
   .center { text-align:center; }
   .counter { display:flex; gap:8px; align-items:center; justify-content:center; }
@@ -116,7 +116,7 @@
     { key: "average", label: "Average (didn’t beat avg)", value: 1.00 },
     { key: "loss", label: "Loss (H2H)", value: 1.00 },
   ];
-  const STORAGE_KEY = "dotsSession_pwa_v3";
+  const STORAGE_KEY = "dotsSession_pwa_v4";
   const ARCHIVE_KEY = "dotsArchive_v1";
 
   function currency(n) { return "$" + n.toFixed(2); }
@@ -230,6 +230,8 @@
     renderArchiveList();
   }
 
+  function csvEscape(cell){ return '\"' + String(cell).replace(/\"/g, '\"\"') + '\"'; }
+
   function buildCSV(night){
     const headers = ["Title","Bowler", ...CATEGORIES.map(c=>`${c.label} (count)`), ...CATEGORIES.map(c=>`${c.label} ($)`), "Subtotal ($)","Paid ($)","Balance ($)"];
     const rows = night.bowlers.map(b=>{
@@ -239,7 +241,7 @@
       const paid = b.paid||0; const balance = subtotal - paid;
       return [night.title, b.name, ...counts, ...dollars, subtotal.toFixed(2), paid.toFixed(2), balance.toFixed(2)];
     });
-    return [headers, ...rows].map(r => r.map(cell => f"\"{str(cell).replace('\"','\"\"')}\"").join(",")).join("\n");
+    return [headers, ...rows].map(r => r.map(csvEscape).join(",")).join("\\n");
   }
 
   function download(name, text, type="text/plain"){
@@ -291,7 +293,7 @@
   resetCountersBtn.addEventListener("click", ()=>{ if(!confirm("Reset all counters to 0?")) return; state.bowlers.forEach(b=>CATEGORIES.forEach(c=>b.counts[c.key]=0)); saveState(); render(); });
   resetAllBtn.addEventListener("click", ()=>{ if(!confirm("Reset names, counters, and payments?")) return; state = seedState(); saveState(); render(); });
   document.getElementById("clearArchiveBtn").addEventListener("click", ()=>{ if(!confirm("Clear ENTIRE archive?")) return; localStorage.removeItem("dotsArchive_v1"); renderArchiveList(); });
-  document.getElementById("exportAllBtn").addEventListener("click", ()=>{ const archive = loadArchive(); if (archive.length===0){ alert("No saved nights yet."); return; } const combined = archive.map(n=>buildCSV(n)).join("\n\n"); download("dots-archive.csv", combined, "text/csv;charset=utf-8;"); });
+  document.getElementById("exportAllBtn").addEventListener("click", ()=>{ const archive = loadArchive(); if (archive.length===0){ alert("No saved nights yet."); return; } const combined = archive.map(n=>buildCSV(n)).join("\\n\\n"); download("dots-archive.csv", combined, "text/csv;charset=utf-8;"); });
 
   render();
 
