@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Bowling Dots — Tap Counter (PWA v9)</title>
+<title>Bowling Dots — Tap Counter (PWA v9a)</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0a0a0a">
 <style>
@@ -46,10 +46,8 @@
   .sticky-footer { position: sticky; left: 0; z-index: 2; box-shadow: 2px 0 0 #262626; }
   .version { font-size:12px; color:#a3a3a3; }
   .error { background:#7f1d1d; color:#fecaca; padding:8px 12px; border-radius:10px; margin-top:10px; display:none; }
-  .catRow { display:grid; grid-template-columns: 1fr 120px 90px; gap:8px; align-items:center; margin-bottom:8px; }
-  .catRow input[type="text"] { width:100%; }
-  .catRow input[type="number"] { width:100%; text-align:right; }
   .namesRow { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+  .catRow { display:grid; grid-template-columns: 1fr 120px 90px; gap:8px; align-items:center; margin-bottom:8px; }
   .hint { font-size:12px; color:#a3a3a3; }
   @media (max-width: 1200px) { .container { padding: 16px; } }
 </style>
@@ -59,7 +57,7 @@
     <header>
       <div style="display:flex; align-items:flex-end; gap:12px;">
         <h1 style="margin:0;">Bowling Dots — Tap Counter</h1>
-        <span class="version">v9</span>
+        <span class="version">v9a</span>
       </div>
       <div class="muted">5‑man team • plus/minus taps • offline PWA • Archive • Totals • <b>Settings</b></div>
       <div class="toolbar">
@@ -144,7 +142,6 @@
     <section id="settingsSection" style="display:none;">
       <section class="card">
         <h3 style="margin:0;">Categories & Rates</h3>
-        <p class="hint">Rename labels or edit rates. Deleting removes that category from the current night (saved nights keep their snapshot). Adding creates a new category going forward.</p>
         <div id="settingsCats"></div>
         <div class="row" style="margin-top:8px;">
           <button id="addCatBtn">Add Category</button>
@@ -153,27 +150,14 @@
           <button id="saveCatsBtn" class="btn-primary">Save Settings</button>
         </div>
       </section>
-
       <section class="card">
         <h3 style="margin:0;">Bowlers</h3>
-        <p class="hint">Edit team list. The order shown is the order used in the Live table.</p>
         <div id="namesWrap" class="namesRow"></div>
         <div class="row" style="margin-top:8px;">
           <button id="addBowlerBtn">Add Bowler</button>
           <span class="spacer"></span>
           <button id="saveNamesBtn" class="btn-primary">Save Names</button>
         </div>
-      </section>
-
-      <section class="card">
-        <h3 style="margin:0;">Data Tools</h3>
-        <div class="row" style="gap:8px; margin-top:8px; flex-wrap:wrap;">
-          <button id="importOldBtn">Import Old Data</button>
-          <button id="backupBtn">Backup (JSON)</button>
-          <button id="restoreBtn">Restore (JSON)</button>
-          <button id="repairBtn">Repair</button>
-        </div>
-        <p class="hint">Import Old Data pulls from earlier local keys (v7/v8). Backup/Restore lets you save everything to a file or restore later.</p>
       </section>
     </section>
 
@@ -206,49 +190,17 @@
       { key: "loss",          label: "Loss (H2H)", value: 1.00 }
     ];
 
-    // Stable keys going forward
     const STORAGE_KEY = "dotsSession";
     const ARCHIVE_KEY = "dotsArchive";
     const CATS_KEY = "dotsCategories";
 
-    // Known legacy keys for migration
-    const LEGACY_SESSION_KEYS = ["dotsSession_pwa_v8c","dotsSession_pwa_v8b","dotsSession_pwa_v8","dotsSession_pwa_v7","dotsSession_pwa_v7b","dotsSession_pwa_v7a"];
-    const LEGACY_ARCHIVE_KEYS = ["dotsArchive_v2","dotsArchive_v1"];
-    const LEGACY_CATS_KEYS = ["dotsCategories_v1"];
-
-    function isValidCats(cats){
-      if (!Array.isArray(cats) || cats.length === 0) return false;
-      for (const c of cats){
-        if (!c || typeof c !== "object") return false;
-        if (!("key" in c) || !("label" in c) || !("value" in c)) return false;
-        if (typeof c.key !== "string" || typeof c.label !== "string" || !(typeof c.value === "number" && isFinite(c.value))) return false;
-      }
-      return true;
-    }
-
-    function loadCategories(){
-      try{
-        const raw = localStorage.getItem(CATS_KEY);
-        if (raw){
-          const parsed = JSON.parse(raw);
-          if (isValidCats(parsed)) return parsed;
-        }
-      }catch(e){}
-      // Try legacy
-      for (const k of LEGACY_CATS_KEYS){
-        try {
-          const raw = localStorage.getItem(k);
-          if (raw){ const parsed = JSON.parse(raw); if (isValidCats(parsed)) return parsed; }
-        }catch(e){}
-      }
-      return DEFAULT_CATEGORIES.slice();
-    }
-    function saveCategories(cats){ try{ localStorage.setItem(CATS_KEY, JSON.stringify(cats)); }catch(e){} }
-    let CATEGORIES = loadCategories();
-    if (!isValidCats(CATEGORIES)){ CATEGORIES = DEFAULT_CATEGORIES.slice(); saveCategories(CATEGORIES); }
+    function isValidCats(cats){ return Array.isArray(cats) && cats.length>0 && cats.every(c=>c && typeof c.key==="string" && typeof c.label==="string" && typeof c.value==="number"); }
+    function loadCats(){ try{ const r=localStorage.getItem(CATS_KEY); if(r){ const p=JSON.parse(r); if(isValidCats(p)) return p; } }catch(e){} return DEFAULT_CATEGORIES.slice(); }
+    function saveCats(c){ try{ localStorage.setItem(CATS_KEY, JSON.stringify(c)); }catch(e){} }
+    let CATEGORIES = loadCats();
 
     function currency(n){ return "$" + n.toFixed(2); }
-    function sumSubtotal(b, cats){ return (cats||CATEGORIES).reduce((acc,c)=>acc+(b.counts[c.key]||0)*c.value,0); }
+    function sumSubtotal(b){ return CATEGORIES.reduce((acc,c)=>acc+(b.counts[c.key]||0)*c.value,0); }
     function csvEscape(cell){ return '"' + String(cell).replace(/"/g,'""') + '"'; }
     function slugify(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,""); }
 
@@ -257,45 +209,14 @@
     function loadArchive(){ try{ return JSON.parse(localStorage.getItem(ARCHIVE_KEY)) || []; }catch(e){ return []; } }
     function saveArchive(a){ try{ localStorage.setItem(ARCHIVE_KEY, JSON.stringify(a)); }catch(e){} }
 
-    // Migrate on first run if we don't have current keys
-    function tryMigrate(){
-      let migrated = false;
-      if (!localStorage.getItem(STORAGE_KEY)){
-        for (const k of LEGACY_SESSION_KEYS){
-          const raw = localStorage.getItem(k);
-          if (raw){ localStorage.setItem(STORAGE_KEY, raw); migrated = true; break; }
-        }
-      }
-      if (!localStorage.getItem(ARCHIVE_KEY)){
-        let merged = [];
-        for (const k of LEGACY_ARCHIVE_KEYS){
-          try{
-            const arr = JSON.parse(localStorage.getItem(k) || "[]");
-            if (Array.isArray(arr)) merged = merged.concat(arr);
-          }catch(e){}
-        }
-        if (merged.length){ localStorage.setItem(ARCHIVE_KEY, JSON.stringify(merged)); migrated = true; }
-      }
-      if (!localStorage.getItem(CATS_KEY)){
-        for (const k of LEGACY_CATS_KEYS){
-          const raw = localStorage.getItem(k);
-          if (raw){ localStorage.setItem(CATS_KEY, raw); migrated = true; break; }
-        }
-      }
-      return migrated;
-    }
-    tryMigrate();
-
-    // State after migration
     let state = loadState();
-    if (!state || !Array.isArray(state.bowlers) || state.bowlers.length === 0){
-      const d = new Date();
-      const title = "Dots — " + d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+    if (!state || !Array.isArray(state.bowlers) || !state.bowlers.length){
+      const d = new Date(); const title = "Dots — " + d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
       state = { title, bowlers: DEFAULT_BOWLERS.map(n => ({ name:n, counts:Object.fromEntries(CATEGORIES.map(c=>[c.key,0])), paid:0 })) };
       saveState();
     }
 
-    // DOM
+    // DOM refs
     const tabLive = document.getElementById("tabLive");
     const tabTotals = document.getElementById("tabTotals");
     const tabSettings = document.getElementById("tabSettings");
@@ -323,15 +244,9 @@
     const addCatBtn = document.getElementById("addCatBtn");
     const resetCatsBtn = document.getElementById("resetCatsBtn");
     const saveCatsBtn = document.getElementById("saveCatsBtn");
-
     const namesWrap = document.getElementById("namesWrap");
     const addBowlerBtn = document.getElementById("addBowlerBtn");
     const saveNamesBtn = document.getElementById("saveNamesBtn");
-
-    const importOldBtn = document.getElementById("importOldBtn");
-    const backupBtn = document.getElementById("backupBtn");
-    const restoreBtn = document.getElementById("restoreBtn");
-    const repairBtn = document.getElementById("repairBtn");
 
     function showTab(which){
       [tabLive, tabTotals, tabSettings].forEach(btn=>btn.classList.remove("active"));
@@ -345,11 +260,9 @@
     tabSettings.addEventListener("click", ()=>showTab("settings"));
     if (includeLiveChk) includeLiveChk.addEventListener("change", renderTotals);
 
-    // Live render
     function render(){
       titleInput.value = state.title;
 
-      // Rates
       ratesEl.innerHTML = "";
       CATEGORIES.forEach(c=>{
         const div = document.createElement("div"); div.className="rate";
@@ -358,12 +271,10 @@
         div.appendChild(left); div.appendChild(right); ratesEl.appendChild(div);
       });
 
-      // Header
       while (theadRow.children.length > 1) theadRow.removeChild(theadRow.lastChild);
       CATEGORIES.forEach(c=>{ const th=document.createElement("th"); th.textContent=c.label; th.className="center nowrap"; theadRow.appendChild(th); });
       ["Subtotal","Paid","Balance"].forEach(txt=>{ const th=document.createElement("th"); th.textContent=txt; th.className="num"; theadRow.appendChild(th); });
 
-      // Body
       tbody.innerHTML = "";
       state.bowlers.forEach(b=>{
         const tr=document.createElement("tr");
@@ -397,17 +308,37 @@
         const subtotal=sumSubtotal(b);
         const tdSub=document.createElement("td"); tdSub.className="num"; tdSub.textContent=currency(subtotal); tr.appendChild(tdSub);
 
+        // *** Paid input: commit on blur/change/Enter, default "0.00" ***
         const tdPaid=document.createElement("td"); tdPaid.className="num";
-        const paidInput=document.createElement("input"); paidInput.type="number"; paidInput.step="0.01"; paidInput.value=b.paid||0; paidInput.style.width="90px"; paidInput.style.textAlign="right";
-        paidInput.addEventListener("input", ()=>{ b.paid=parseFloat(paidInput.value)||0; saveState(); render(); });
-        tdPaid.appendChild(paidInput); tr.appendChild(tdPaid);
+        const paidInput=document.createElement("input"); 
+        paidInput.type="number"; 
+        paidInput.step="0.01"; 
+        paidInput.placeholder="0.00";
+        paidInput.value=((b.paid||0).toFixed(2));
+        paidInput.style.width="90px"; 
+        paidInput.style.textAlign="right";
+        // Select text on focus to make editing quick
+        paidInput.addEventListener("focus", ()=>{ paidInput.select(); });
+        // Commit helpers
+        function commitPaid(){
+          let v = parseFloat(paidInput.value);
+          if (isNaN(v)) v = 0;
+          b.paid = Math.max(0, v);
+          saveState();
+          // Re-render after commit (not on every keystroke)
+          render();
+        }
+        paidInput.addEventListener("change", commitPaid);
+        paidInput.addEventListener("blur", commitPaid);
+        paidInput.addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ commitPaid(); paidInput.blur(); }});
+        tdPaid.appendChild(paidInput); 
+        tr.appendChild(tdPaid);
 
         const tdBal=document.createElement("td"); tdBal.className="num"; tdBal.textContent=currency(subtotal-(b.paid||0)); tr.appendChild(tdBal);
 
         tbody.appendChild(tr);
       });
 
-      // Footer totals
       while (tfootRow.children.length > 1) tfootRow.removeChild(tfootRow.lastChild);
       CATEGORIES.forEach(c=>{
         const totalCount = state.bowlers.reduce((a,b)=>a+(b.counts[c.key]||0),0);
@@ -421,7 +352,6 @@
       renderArchiveList();
     }
 
-    // CSV for a night
     function buildCSV(night){
       const cats = night.categories || CATEGORIES;
       const headers = ["Title","Bowler"].concat(cats.map(c=>c.label + " (count)")).concat(cats.map(c=>c.label + " ($)")).concat(["Subtotal ($)","Paid ($)","Balance ($)"]);
@@ -442,7 +372,6 @@
       URL.revokeObjectURL(url);
     }
 
-    // Archive
     function saveNight(){
       const night = JSON.parse(JSON.stringify(state));
       night.categories = JSON.parse(JSON.stringify(CATEGORIES));
@@ -489,7 +418,6 @@
       });
     }
 
-    // Totals
     function renderTotals(){
       const includeLive = includeLiveChk && includeLiveChk.checked;
       const archive = loadArchive();
@@ -598,7 +526,6 @@
       nightWrap.appendChild(t3);
     }
 
-    // Settings
     function renderSettings(){
       // Categories
       settingsCats.innerHTML = "";
@@ -608,10 +535,10 @@
         const rateI = document.createElement("input"); rateI.type="number"; rateI.step="0.01"; rateI.value=c.value.toFixed(2);
         const delB = document.createElement("button"); delB.textContent="Delete";
         delB.addEventListener("click", function(){
-          if (!confirm("Delete category '" + c.label + "'? This removes it from the current night. Saved nights keep their snapshot.")) return;
+          if (!confirm("Delete '" + c.label + "'? This removes it from the current night. Saved nights keep their snapshot.")) return;
           const removed = CATEGORIES.splice(idx,1)[0];
           state.bowlers.forEach(b=>{ delete b.counts[removed.key]; });
-          saveState(); saveCategories(CATEGORIES); render(); renderSettings();
+          saveState(); saveCats(CATEGORIES); render(); renderSettings();
         });
         nameI.addEventListener("input", function(){ c.label = nameI.value; });
         rateI.addEventListener("input", function(){ c.value = parseFloat(rateI.value)||0; });
@@ -643,23 +570,23 @@
       const key = slugify(label||("cat-"+Date.now()));
       CATEGORIES.push({ key, label, value: 0.00 });
       state.bowlers.forEach(b=>{ b.counts[key]=0; });
-      saveState(); saveCategories(CATEGORIES); render(); renderSettings();
+      saveState(); saveCats(CATEGORIES); render(); renderSettings();
     });
 
     resetCatsBtn.addEventListener("click", function(){
-      if (!confirm("Reset categories to defaults? This won't change saved nights.")) return;
+      if (!confirm("Reset categories to defaults?")) return;
       CATEGORIES = DEFAULT_CATEGORIES.slice();
       state.bowlers.forEach(function(b){
         const newCounts = {}; CATEGORIES.forEach(c=>{ newCounts[c.key]= b.counts[c.key]||0; });
         b.counts = newCounts;
       });
-      saveCategories(CATEGORIES); saveState(); render(); renderSettings();
+      saveCats(CATEGORIES); saveState(); render(); renderSettings();
     });
 
     saveCatsBtn.addEventListener("click", function(){
       if (!isValidCats(CATEGORIES) || CATEGORIES.length === 0){ alert("You must keep at least one category."); return; }
       state.bowlers.forEach(function(b){ CATEGORIES.forEach(c=>{ if(!(c.key in b.counts)) b.counts[c.key]=0; }); });
-      saveCategories(CATEGORIES); saveState(); render();
+      saveCats(CATEGORIES); saveState(); render();
       alert("Settings saved.");
     });
 
@@ -670,74 +597,17 @@
     });
     saveNamesBtn.addEventListener("click", function(){ saveState(); render(); alert("Names saved."); });
 
-    importOldBtn.addEventListener("click", function(){
-      const migrated = (function(){
-        let did=false;
-        for (const k of LEGACY_SESSION_KEYS){ const raw=localStorage.getItem(k); if(raw){ localStorage.setItem(STORAGE_KEY, raw); did=true; break; } }
-        let merged = loadArchive();
-        for (const k of LEGACY_ARCHIVE_KEYS){ try{ const arr=JSON.parse(localStorage.getItem(k)||"[]"); if(Array.isArray(arr)) merged=merged.concat(arr);}catch(e){} }
-        saveArchive(merged);
-        for (const k of LEGACY_CATS_KEYS){ const raw=localStorage.getItem(k); if(raw){ localStorage.setItem(CATS_KEY, raw); did=true; break; } }
-        return did;
-      })();
-      alert(migrated ? "Imported old data. Reloading UI…" : "No old data found.");
-      CATEGORIES = loadCategories(); state = loadState(); if(!state){ state={ title:"Dots — import", bowlers:[] }; }
-      render(); renderSettings(); renderArchiveList(); 
-    });
-
-    backupBtn.addEventListener("click", function(){
-      const payload = JSON.stringify({
-        session: state,
-        categories: CATEGORIES,
-        archive: loadArchive()
-      }, null, 2);
-      download("bowling-dots-backup.json", payload, "application/json");
-    });
-
-    restoreBtn.addEventListener("click", function(){
-      const inp = document.createElement("input"); inp.type="file"; inp.accept="application/json";
-      inp.onchange = function(){
-        const file = inp.files[0]; if(!file) return;
-        const reader = new FileReader();
-        reader.onload = function(){ 
-          try{
-            const obj = JSON.parse(reader.result);
-            if (obj.session) { state = obj.session; saveState(); }
-            if (obj.categories) { CATEGORIES = obj.categories; saveCategories(CATEGORIES); }
-            if (obj.archive) { saveArchive(obj.archive); }
-            alert("Restore complete.");
-            render(); renderSettings(); renderArchiveList();
-          }catch(e){ alert("Bad JSON."); }
-        };
-        reader.readAsText(file);
-      };
-      inp.click();
-    });
-
-    repairBtn.addEventListener("click", function(){
-      if (!confirm("Repair app data? This resets categories to defaults and reseeds tonight; archive remains.")) return;
-      localStorage.removeItem(CATS_KEY);
-      CATEGORIES = DEFAULT_CATEGORIES.slice();
-      const d = new Date();
-      const title = "Dots — " + d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
-      state = { title, bowlers: DEFAULT_BOWLERS.map(n => ({ name:n, counts:Object.fromEntries(CATEGORIES.map(c=>[c.key,0])), paid:0 })) };
-      saveCategories(CATEGORIES); saveState();
-      render(); renderSettings();
-    });
-
-    // Input handlers
+    // Inputs
     titleInput.addEventListener("input", ()=>{ state.title = titleInput.value; saveState(); });
     saveNightBtn.addEventListener("click", saveNight);
     exportBtn.addEventListener("click", ()=>download((state.title||"dots")+".csv", buildCSV({ title: state.title, bowlers: state.bowlers, categories: CATEGORIES }), "text/csv;charset=utf-8;"));
     resetCountersBtn.addEventListener("click", ()=>{ if(!confirm("Reset all counters to 0?")) return; state.bowlers.forEach(b=>CATEGORIES.forEach(c=>b.counts[c.key]=0)); saveState(); render(); });
-    resetAllBtn.addEventListener("click", ()=>{ if(!confirm("Reset names, counters, and payments?")) return; const d = new Date(); const title = "Dots — " + d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); state = { title, bowlers: DEFAULT_BOWLERS.map(n => ({ name:n, counts:Object.fromEntries(CATEGORIES.map(c=>[c.key,0])), paid:0 })) }; saveState(); render(); });
+    resetAllBtn.addEventListener("click", ()=>{ if(!confirm("Reset names, counters, and payments?")) return; const d=new Date(); const title="Dots — "+d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); state = { title, bowlers: DEFAULT_BOWLERS.map(n => ({ name:n, counts:Object.fromEntries(CATEGORIES.map(c=>[c.key,0])), paid:0 })) }; saveState(); render(); });
     clearArchiveBtn.addEventListener("click", ()=>{ if(!confirm("Clear ENTIRE archive?")) return; localStorage.removeItem(ARCHIVE_KEY); renderArchiveList(); });
     exportAllBtn.addEventListener("click", ()=>{ const archive = loadArchive(); if (archive.length===0){ alert("No saved nights yet."); return; } const combined = archive.map(n=>buildCSV(n)).join("\n\n"); download("dots-archive.csv", combined, "text/csv;charset=utf-8;"); });
 
-    // First render
     render();
 
-    // PWA service worker
     if ("serviceWorker" in navigator){
       window.addEventListener("load", ()=>navigator.serviceWorker.register("./sw.js").catch(err=>console.warn("SW register failed", err)));
     }
