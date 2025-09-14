@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Bowling Dots — Tap Counter (PWA v9a)</title>
+<title>Bowling Dots — Tap Counter (PWA v9c)</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0a0a0a">
 <style>
@@ -25,7 +25,7 @@
   .grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:8px; }
   .rate { display:flex; justify-content:space-between; align-items:center; background:#121212; border:1px solid #262626; border-radius:12px; padding:8px 10px; font-size:14px; }
   .table-wrap { position: relative; overflow: auto; }
-  table { width:100%; border-collapse:collapse; min-width:980px; }
+  table { width:100%; border-collapse:collapse; min-width:1080px; }
   th, td { padding:8px; border-top:1px solid #262626; vertical-align:top; background:#0f0f0f; }
   th { color:#cfcfcf; text-align:left; }
   thead th { position: sticky; top: 0; z-index: 5; background:#0f0f0f; }
@@ -57,7 +57,7 @@
     <header>
       <div style="display:flex; align-items:flex-end; gap:12px;">
         <h1 style="margin:0;">Bowling Dots — Tap Counter</h1>
-        <span class="version">v9a</span>
+        <span class="version">v9c</span>
       </div>
       <div class="muted">5‑man team • plus/minus taps • offline PWA • Archive • Totals • <b>Settings</b></div>
       <div class="toolbar">
@@ -216,14 +216,12 @@
       saveState();
     }
 
-    // DOM refs
     const tabLive = document.getElementById("tabLive");
     const tabTotals = document.getElementById("tabTotals");
     const tabSettings = document.getElementById("tabSettings");
     const liveSection = document.getElementById("liveSection");
     const totalsSection = document.getElementById("totalsSection");
     const settingsSection = document.getElementById("settingsSection");
-
     const includeLiveChk = document.getElementById("includeLiveChk");
 
     const titleInput = document.getElementById("titleInput");
@@ -260,6 +258,29 @@
     tabSettings.addEventListener("click", ()=>showTab("settings"));
     if (includeLiveChk) includeLiveChk.addEventListener("change", renderTotals);
 
+    function runningBalanceFor(name){
+      const norm = (s)=>String(s||"").trim().toLowerCase();
+      const key = norm(name);
+      const archive = loadArchive();
+      let carry = 0;
+      archive.forEach(n=>{
+        const cats = n.categories || CATEGORIES;
+        const valByKey = Object.fromEntries(cats.map(c=>[c.key, c.value]));
+        (n.bowlers||[]).forEach(b=>{
+          if (norm(b.name) === key){
+            const sub = cats.reduce((acc,c)=> acc + ((b.counts&&b.counts[c.key]||0)*(valByKey[c.key]||c.value||0)), 0);
+            carry += sub - (b.paid||0);
+          }
+        });
+      });
+      const current = state.bowlers.find(b=> norm(b.name)===key);
+      if (current){
+        const currentSub = CATEGORIES.reduce((acc,c)=> acc + ((current.counts[c.key]||0)*c.value), 0);
+        carry += currentSub - (current.paid||0);
+      }
+      return carry;
+    }
+
     function render(){
       titleInput.value = state.title;
 
@@ -273,7 +294,7 @@
 
       while (theadRow.children.length > 1) theadRow.removeChild(theadRow.lastChild);
       CATEGORIES.forEach(c=>{ const th=document.createElement("th"); th.textContent=c.label; th.className="center nowrap"; theadRow.appendChild(th); });
-      ["Subtotal","Paid","Balance"].forEach(txt=>{ const th=document.createElement("th"); th.textContent=txt; th.className="num"; theadRow.appendChild(th); });
+      ["Weekly Subtotal","Paid (wk)","Weekly Bal","Running Bal"].forEach(txt=>{ const th=document.createElement("th"); th.textContent=txt; th.className="num"; theadRow.appendChild(th); });
 
       tbody.innerHTML = "";
       state.bowlers.forEach(b=>{
@@ -281,7 +302,7 @@
 
         const tdName=document.createElement("td"); tdName.className="sticky-col";
         const nameInput=document.createElement("input"); nameInput.type="text"; nameInput.value=b.name; nameInput.size=14;
-        nameInput.addEventListener("input", ()=>{ b.name=nameInput.value; saveState(); });
+        nameInput.addEventListener("input", ()=>{ b.name=nameInput.value; saveState(); render(); });
         tdName.appendChild(nameInput); tr.appendChild(tdName);
 
         CATEGORIES.forEach(c=>{
@@ -308,33 +329,23 @@
         const subtotal=sumSubtotal(b);
         const tdSub=document.createElement("td"); tdSub.className="num"; tdSub.textContent=currency(subtotal); tr.appendChild(tdSub);
 
-        // *** Paid input: commit on blur/change/Enter, default "0.00" ***
         const tdPaid=document.createElement("td"); tdPaid.className="num";
         const paidInput=document.createElement("input"); 
-        paidInput.type="number"; 
-        paidInput.step="0.01"; 
-        paidInput.placeholder="0.00";
+        paidInput.type="number"; paidInput.step="0.01"; paidInput.placeholder="0.00";
         paidInput.value=((b.paid||0).toFixed(2));
-        paidInput.style.width="90px"; 
-        paidInput.style.textAlign="right";
-        // Select text on focus to make editing quick
-        paidInput.addEventListener("focus", ()=>{ paidInput.select(); });
-        // Commit helpers
-        function commitPaid(){
-          let v = parseFloat(paidInput.value);
-          if (isNaN(v)) v = 0;
-          b.paid = Math.max(0, v);
-          saveState();
-          // Re-render after commit (not on every keystroke)
-          render();
-        }
+        paidInput.style.width="90px"; paidInput.style.textAlign="right";
+        paidInput.addEventListener("focus", ()=>paidInput.select());
+        function commitPaid(){ let v=parseFloat(paidInput.value); if(isNaN(v)) v=0; b.paid=Math.max(0,v); saveState(); render(); }
         paidInput.addEventListener("change", commitPaid);
         paidInput.addEventListener("blur", commitPaid);
         paidInput.addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ commitPaid(); paidInput.blur(); }});
-        tdPaid.appendChild(paidInput); 
-        tr.appendChild(tdPaid);
+        tdPaid.appendChild(paidInput); tr.appendChild(tdPaid);
 
-        const tdBal=document.createElement("td"); tdBal.className="num"; tdBal.textContent=currency(subtotal-(b.paid||0)); tr.appendChild(tdBal);
+        const weeklyBal = subtotal - (b.paid||0);
+        const tdWBal=document.createElement("td"); tdWBal.className="num"; tdWBal.textContent=currency(weeklyBal); tr.appendChild(tdWBal);
+
+        const runBal = runningBalanceFor(b.name);
+        const tdRBal=document.createElement("td"); tdRBal.className="num"; tdRBal.textContent=currency(runBal); tr.appendChild(tdRBal);
 
         tbody.appendChild(tr);
       });
@@ -344,10 +355,11 @@
         const totalCount = state.bowlers.reduce((a,b)=>a+(b.counts[c.key]||0),0);
         const td=document.createElement("td"); td.className="center"; td.textContent=totalCount; tfootRow.appendChild(td);
       });
-      const teamSubtotal = state.bowlers.reduce((a,b)=>a+sumSubtotal(b),0);
-      const teamPaid = state.bowlers.reduce((a,b)=>a+(b.paid||0),0);
-      const teamBal = teamSubtotal - teamPaid;
-      [teamSubtotal,teamPaid,teamBal].forEach(val=>{ const td=document.createElement("td"); td.className="num"; td.textContent=currency(val); tfootRow.appendChild(td); });
+      const teamWeeklySubtotal = state.bowlers.reduce((a,b)=>a+sumSubtotal(b),0);
+      const teamWeeklyPaid = state.bowlers.reduce((a,b)=>a+(b.paid||0),0);
+      const teamWeeklyBal = teamWeeklySubtotal - teamWeeklyPaid;
+      const teamRunBal = state.bowlers.reduce((a,b)=> a + runningBalanceFor(b.name), 0);
+      [teamWeeklySubtotal,teamWeeklyPaid,teamWeeklyBal,teamRunBal].forEach(val=>{ const td=document.createElement("td"); td.className="num"; td.textContent=currency(val); tfootRow.appendChild(td); });
 
       renderArchiveList();
     }
@@ -527,7 +539,6 @@
     }
 
     function renderSettings(){
-      // Categories
       settingsCats.innerHTML = "";
       CATEGORIES.forEach(function(c, idx){
         const row = document.createElement("div"); row.className="catRow";
@@ -546,7 +557,6 @@
         settingsCats.appendChild(row);
       });
 
-      // Names
       namesWrap.innerHTML = "";
       state.bowlers.forEach(function(b, idx){
         const row = document.createElement("div"); row.className="namesRow";
@@ -597,11 +607,10 @@
     });
     saveNamesBtn.addEventListener("click", function(){ saveState(); render(); alert("Names saved."); });
 
-    // Inputs
     titleInput.addEventListener("input", ()=>{ state.title = titleInput.value; saveState(); });
     saveNightBtn.addEventListener("click", saveNight);
     exportBtn.addEventListener("click", ()=>download((state.title||"dots")+".csv", buildCSV({ title: state.title, bowlers: state.bowlers, categories: CATEGORIES }), "text/csv;charset=utf-8;"));
-    resetCountersBtn.addEventListener("click", ()=>{ if(!confirm("Reset all counters to 0?")) return; state.bowlers.forEach(b=>CATEGORIES.forEach(c=>b.counts[c.key]=0)); saveState(); render(); });
+    resetCountersBtn.addEventListener("click", ()=>{ if(!confirm("Reset all counters and weekly PAID to 0?")) return; state.bowlers.forEach(b=>{ CATEGORIES.forEach(c=>b.counts[c.key]=0); b.paid=0; }); saveState(); render(); });
     resetAllBtn.addEventListener("click", ()=>{ if(!confirm("Reset names, counters, and payments?")) return; const d=new Date(); const title="Dots — "+d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); state = { title, bowlers: DEFAULT_BOWLERS.map(n => ({ name:n, counts:Object.fromEntries(CATEGORIES.map(c=>[c.key,0])), paid:0 })) }; saveState(); render(); });
     clearArchiveBtn.addEventListener("click", ()=>{ if(!confirm("Clear ENTIRE archive?")) return; localStorage.removeItem(ARCHIVE_KEY); renderArchiveList(); });
     exportAllBtn.addEventListener("click", ()=>{ const archive = loadArchive(); if (archive.length===0){ alert("No saved nights yet."); return; } const combined = archive.map(n=>buildCSV(n)).join("\n\n"); download("dots-archive.csv", combined, "text/csv;charset=utf-8;"); });
