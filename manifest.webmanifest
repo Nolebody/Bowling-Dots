@@ -1,7 +1,7 @@
 {
   "name": "Bowling Dots \u2014 Tap Counter",
   "short_name": "Dots Counter",
-  "start_url": ".",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#0a0a0a",
