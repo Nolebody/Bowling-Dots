@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Bowling Dots — Tap Counter (PWA v8b)</title>
+<title>Bowling Dots — Tap Counter (PWA v8c)</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0a0a0a">
 <style>
@@ -58,7 +58,7 @@
     <header>
       <div style="display:flex; align-items:flex-end; gap:12px;">
         <h1 style="margin:0;">Bowling Dots — Tap Counter</h1>
-        <span class="version">v8b</span>
+        <span class="version">v8c</span>
       </div>
       <div class="muted">5‑man team • plus/minus taps • offline PWA • Archive • Totals • <b>Settings</b></div>
       <div class="toolbar">
@@ -150,6 +150,7 @@
           <span class="spacer"></span>
           <button id="resetCatsBtn" class="btn-danger">Reset to Defaults</button>
           <button id="saveCatsBtn" class="btn-primary">Save Settings</button>
+          <button id="repairBtn">Repair Data</button>
         </div>
       </section>
     </section>
@@ -183,23 +184,45 @@
       { key: "loss",          label: "Loss (H2H)", value: 1.00 }
     ];
 
-    const STORAGE_KEY = "dotsSession_pwa_v8b";
+    const STORAGE_KEY = "dotsSession_pwa_v8c";
     const ARCHIVE_KEY = "dotsArchive_v2";
     const CATS_KEY = "dotsCategories_v1";
 
+    function isValidCats(cats){
+      if (!Array.isArray(cats) || cats.length === 0) return false;
+      for (const c of cats){
+        if (!c || typeof c !== "object") return false;
+        if (!("key" in c) || !("label" in c) || !("value" in c)) return false;
+        if (typeof c.key !== "string" || typeof c.label !== "string" || !(typeof c.value === "number" && isFinite(c.value))) return false;
+      }
+      return true;
+    }
+
     function loadCategories(){
-      try{ const raw = localStorage.getItem(CATS_KEY); if(raw) return JSON.parse(raw); }catch(e){}
+      try{
+        const raw = localStorage.getItem(CATS_KEY);
+        if (raw){
+          const parsed = JSON.parse(raw);
+          if (isValidCats(parsed)) return parsed;
+        }
+      }catch(e){ console.warn("Bad categories in storage; resetting to defaults."); }
       return DEFAULT_CATEGORIES.slice();
     }
     function saveCategories(cats){ try{ localStorage.setItem(CATS_KEY, JSON.stringify(cats)); }catch(e){} }
     let CATEGORIES = loadCategories();
+    if (!isValidCats(CATEGORIES)){ CATEGORIES = DEFAULT_CATEGORIES.slice(); saveCategories(CATEGORIES); }
 
     function currency(n){ return "$" + n.toFixed(2); }
     function sumSubtotal(b, cats){ return (cats||CATEGORIES).reduce((acc,c)=>acc+(b.counts[c.key]||0)*c.value,0); }
     function csvEscape(cell){ return '"' + String(cell).replace(/"/g,'""') + '"'; }
     function slugify(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,""); }
 
-    let state = loadState() || seedState();
+    let state = loadState();
+    if (!state || !Array.isArray(state.bowlers) || state.bowlers.length === 0){
+      state = seedState();
+      saveState();
+    }
+
     function seedState(){
       const d = new Date();
       const title = "Dots — " + d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
@@ -237,6 +260,7 @@
     const addCatBtn = document.getElementById("addCatBtn");
     const resetCatsBtn = document.getElementById("resetCatsBtn");
     const saveCatsBtn = document.getElementById("saveCatsBtn");
+    const repairBtn = document.getElementById("repairBtn");
 
     function showTab(which){
       [tabLive, tabTotals, tabSettings].forEach(btn=>btn.classList.remove("active"));
@@ -275,6 +299,7 @@
         tdName.appendChild(nameInput); tr.appendChild(tdName);
 
         CATEGORIES.forEach(c=>{
+          if (!(c.key in b.counts)) b.counts[c.key]=0; // ensure present
           const td=document.createElement("td");
           const box=document.createElement("div"); box.className="counter";
 
@@ -320,39 +345,239 @@
       renderArchiveList();
     }
 
-    defCSVHeaders = ["Title","Bowler"]
-    defCSVHeaders
+    function buildCSV(night){
+      const cats = night.categories || CATEGORIES;
+      const headers = ["Title","Bowler"].concat(cats.map(c=>c.label + " (count)")).concat(cats.map(c=>c.label + " ($)")).concat(["Subtotal ($)","Paid ($)","Balance ($)"]);
+      const rows = (night.bowlers||[]).map(b=>{
+        const counts = cats.map(c=> String((b.counts||{})[c.key]||0));
+        const dollars = cats.map(c=> (((b.counts||{})[c.key]||0)*c.value).toFixed(2));
+        const subtotal = (cats).reduce((acc,c)=> acc + (((b.counts||{})[c.key]||0)*c.value), 0);
+        const paid = b.paid||0; const balance = subtotal - paid;
+        return [night.title, b.name].concat(counts).concat(dollars).concat([subtotal.toFixed(2), paid.toFixed(2), balance.toFixed(2)]);
+      });
+      return [headers].concat(rows).map(r => r.map(csvEscape).join(",")).join("\n");
+    }
 
-    def buildCSV(night):
-      cats = night.get("categories") or CATEGORIES
-      headers = ["Title","Bowler"] + [c["label"] + " (count)" for c in cats] + [c["label"] + " ($)" for c in cats] + ["Subtotal ($)","Paid ($)","Balance ($)"]
-      rows = []
-      for b in night["bowlers"]:
-        counts = [str(b.get("counts",{}).get(c["key"],0)) for c in cats]
-        dollars = [("{:.2f}".format((b.get("counts",{}).get(c["key"],0))*c["value"])) for c in cats]
-        subtotal = sum((b.get("counts",{}).get(c["key"],0))*c["value"] for c in cats)
-        paid = b.get("paid",0) or 0
-        balance = subtotal - paid
-        rows.append([night["title"], b["name"]] + counts + dollars + ["{:.2f}".format(subtotal), "{:.2f}".format(paid), "{:.2f}".format(balance)])
-      def esc(cell): 
-        return '"' + str(cell).replace('"','""') + '"'
-      csv = ",".join(esc(h) for h in headers) + "\n"
-      for r in rows:
-        csv += ",".join(esc(x) for x in r) + "\n"
-      return csv
+    function download(name, text, type){
+      const blob = new Blob([text], { type: type || "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = name; a.click();
+      URL.revokeObjectURL(url);
+    }
 
-    def download_csv(name, text):
-      pass  # not used in compiled artifact; only used in-browser
+    function saveNight(){
+      const night = JSON.parse(JSON.stringify(state));
+      night.categories = JSON.parse(JSON.stringify(CATEGORIES));
+      const archive = loadArchive(); archive.unshift(night); saveArchive(archive);
+      alert("Night saved to Archive.");
+      renderArchiveList();
+    }
 
-    def saveNightPy():
-      pass  # placeholder; real logic is in JS
+    function renderArchiveList(){
+      const archive = loadArchive();
+      archiveList.innerHTML = "";
+      if (archive.length === 0){ const p=document.createElement("p"); p.className="muted"; p.textContent="No saved nights yet."; archiveList.appendChild(p); return; }
+      archive.forEach((night, idx) => {
+        const details=document.createElement("details");
+        const summary=document.createElement("summary"); summary.textContent = night.title || ("Night " + (idx+1)); details.appendChild(summary);
+        const inner=document.createElement("div"); inner.style.margin="8px 0 12px 16px";
 
-    def renderArchiveListPy():
-      pass  # placeholder; real logic is in JS
+        const btnRow=document.createElement("div"); btnRow.className="row";
+        const exp=document.createElement("button"); exp.textContent="Export CSV"; exp.addEventListener("click", function(){ download((night.title||("night_"+(idx+1)))+".csv", buildCSV(night), "text/csv;charset=utf-8;"); });
+        const load=document.createElement("button"); load.textContent="Load into Live"; load.addEventListener("click", function(){ state = night; saveState(); render(); window.scrollTo({top:0,behavior:'smooth'}); });
+        const del=document.createElement("button"); del.textContent="Delete"; del.className="btn-danger"; del.addEventListener("click", function(){ if(confirm("Delete this saved night?")){ const a=loadArchive(); a.splice(idx,1); saveArchive(a); renderArchiveList(); }});
+        btnRow.appendChild(exp); btnRow.appendChild(load); btnRow.appendChild(del); inner.appendChild(btnRow);
 
-    // JS functions continue in the HTML...
+        const cats = night.categories || CATEGORIES;
+        const table=document.createElement("table"); table.style.marginTop="8px";
+        const thead=document.createElement("thead");
+        var hdrs=["Bowler"].concat(cats.map(c=>c.label)).concat(["Subtotal","Paid","Balance"]);
+        hdrs.forEach(function(h){ var th=document.createElement("th"); th.textContent=h; thead.appendChild(th); });
+        table.appendChild(thead);
+        const tb=document.createElement("tbody");
+        (night.bowlers||[]).forEach(function(b){
+          var tr=document.createElement("tr");
+          var tdn=document.createElement("td"); tdn.textContent=b.name; tr.appendChild(tdn);
+          cats.forEach(function(c){ var td=document.createElement("td"); td.className="center"; td.textContent=(b.counts&&b.counts[c.key]||0); tr.appendChild(td); });
+          const subtotal = cats.reduce(function(acc,c){ return acc + ((b.counts&&b.counts[c.key]||0)*c.value); }, 0);
+          var tdS=document.createElement("td"); tdS.className="num"; tdS.textContent=currency(subtotal); tr.appendChild(tdS);
+          var tdP=document.createElement("td"); tdP.className="num"; tdP.textContent=currency(b.paid||0); tr.appendChild(tdP);
+          var tdB=document.createElement("td"); tdB.className="num"; tdB.textContent=currency(subtotal-(b.paid||0)); tr.appendChild(tdB);
+          tb.appendChild(tr);
+        });
+        table.appendChild(tb); inner.appendChild(table);
 
-    // Event handlers
+        details.appendChild(inner); archiveList.appendChild(details);
+      });
+    }
+
+    function renderTotals(){
+      const includeLive = includeLiveChk && includeLiveChk.checked;
+      const archive = loadArchive();
+      const nights = archive.slice();
+      if (includeLive) nights.unshift(Object.assign({}, state, { categories: CATEGORIES }));
+
+      const catMap = new Map();
+      CATEGORIES.forEach(c => { catMap.set(c.key, { labelCurrent: c.label, labelFirst: c.label }); });
+      nights.forEach(function(n){
+        (n.categories||[]).forEach(function(c){
+          if (!catMap.has(c.key)) catMap.set(c.key, { labelCurrent: null, labelFirst: c.label });
+        });
+      });
+      const unionKeys = Array.from(catMap.keys());
+
+      const bowlerAgg = {};
+      function norm(s){ return String(s||"").trim().toLowerCase(); }
+      nights.forEach(function(n){
+        const cats = n.categories || CATEGORIES;
+        const valByKey = Object.fromEntries(cats.map(c=>[c.key, c.value]));
+        (n.bowlers||[]).forEach(function(b){
+          const key = norm(b.name);
+          if (!bowlerAgg[key]) bowlerAgg[key] = { name: b.name, counts: {}, dollars:{}, subtotal:0, paid:0 };
+          const agg = bowlerAgg[key];
+          unionKeys.forEach(function(k){
+            const cnt = (b.counts && b.counts[k]) || 0;
+            agg.counts[k] = (agg.counts[k]||0) + cnt;
+            const val = valByKey[k] || 0;
+            agg.dollars[k] = (agg.dollars[k]||0) + (cnt * val);
+          });
+          const sub = cats.reduce(function(acc,c){ return acc + ((b.counts&&b.counts[c.key]||0)*c.value); }, 0);
+          agg.subtotal += sub;
+          agg.paid += (b.paid||0);
+        });
+      });
+
+      const wrap = document.getElementById("totalsByBowler");
+      wrap.innerHTML = "";
+      const t = document.createElement("table");
+      const thead = document.createElement("thead");
+      var hdrs = ["Bowler"].concat(unionKeys.map(k=> (catMap.get(k).labelCurrent || catMap.get(k).labelFirst) + " (dots)"))
+                              .concat(unionKeys.map(k=> (catMap.get(k).labelCurrent || catMap.get(k).labelFirst) + " ($)"))
+                              .concat(["Subtotal","Paid","Balance"]);
+      hdrs.forEach(function(h){ var th=document.createElement("th"); th.textContent=h; thead.appendChild(th); });
+      t.appendChild(thead);
+      const tb = document.createElement("tbody");
+      Object.values(bowlerAgg).forEach(function(agg){
+        const tr=document.createElement("tr");
+        const tdn=document.createElement("td"); tdn.textContent=agg.name; tr.appendChild(tdn);
+        unionKeys.forEach(function(k){ var td=document.createElement("td"); td.className="center"; td.textContent=agg.counts[k]||0; tr.appendChild(td); });
+        unionKeys.forEach(function(k){ var td=document.createElement("td"); td.className="num"; td.textContent=currency(agg.dollars[k]||0); tr.appendChild(td); });
+        const bal = agg.subtotal - agg.paid;
+        [agg.subtotal, agg.paid, bal].forEach(function(val){ var td=document.createElement("td"); td.className="num"; td.textContent=currency(val); tr.appendChild(td); });
+        tb.appendChild(tr);
+      });
+      t.appendChild(tb);
+      wrap.appendChild(t);
+
+      const catWrap = document.getElementById("totalsByCategory");
+      catWrap.innerHTML = "";
+      const t2 = document.createElement("table");
+      const thead2 = document.createElement("thead");
+      ["Category","Dots","Dollars"].forEach(function(h){ var th=document.createElement("th"); th.textContent=h; thead2.appendChild(th); });
+      t2.appendChild(thead2);
+      const tb2 = document.createElement("tbody");
+      unionKeys.forEach(function(k){
+        let dots=0, dollars=0;
+        nights.forEach(function(n){
+          const cats = n.categories || CATEGORIES;
+          const valByKey = Object.fromEntries(cats.map(c=>[c.key, c.value]));
+          (n.bowlers||[]).forEach(function(b){
+            const cnt=(b.counts&&b.counts[k]||0);
+            dots += cnt;
+            dollars += cnt * (valByKey[k]||0);
+          });
+        });
+        var tr=document.createElement("tr");
+        var lab = catMap.get(k).labelCurrent || catMap.get(k).labelFirst || k;
+        var td1=document.createElement("td"); td1.textContent=lab; tr.appendChild(td1);
+        var td2=document.createElement("td"); td2.className="center"; td2.textContent=dots; tr.appendChild(td2);
+        var td3=document.createElement("td"); td3.className="num"; td3.textContent=currency(dollars); tr.appendChild(td3);
+        tb2.appendChild(tr);
+      });
+      t2.appendChild(tb2);
+      catWrap.appendChild(t2);
+
+      const nightWrap = document.getElementById("totalsByNight");
+      nightWrap.innerHTML = "";
+      const t3 = document.createElement("table");
+      const thead3 = document.createElement("thead");
+      ["Night","Team Dots ($)","Team Paid","Team Balance"].forEach(function(h){ var th=document.createElement("th"); th.textContent=h; thead3.appendChild(th); });
+      t3.appendChild(thead3);
+      const tb3 = document.createElement("tbody");
+      nights.forEach(function(n){
+        const cats = n.categories || CATEGORIES;
+        const teamSubtotal = (n.bowlers||[]).reduce(function(a,b){ return a + cats.reduce(function(acc,c){ return acc + ((b.counts&&b.counts[c.key]||0) * c.value); }, 0); }, 0);
+        const teamPaid = (n.bowlers||[]).reduce(function(a,b){ return a + (b.paid||0); }, 0);
+        var tr=document.createElement("tr");
+        var td1=document.createElement("td"); td1.textContent=n.title || "Untitled"; tr.appendChild(td1);
+        var td2=document.createElement("td"); td2.className="num"; td2.textContent=currency(teamSubtotal); tr.appendChild(td2);
+        var td3=document.createElement("td"); td3.className="num"; td3.textContent=currency(teamPaid); tr.appendChild(td3);
+        var td4=document.createElement("td"); td4.className="num"; td4.textContent=currency(teamSubtotal-teamPaid); tr.appendChild(td4);
+        tb3.appendChild(tr);
+      });
+      t3.appendChild(tb3);
+      nightWrap.appendChild(t3);
+    }
+
+    function renderSettings(){
+      settingsCats.innerHTML = "";
+      CATEGORIES.forEach(function(c, idx){
+        const row = document.createElement("div"); row.className="catRow";
+        const nameI = document.createElement("input"); nameI.type="text"; nameI.value=c.label;
+        const rateI = document.createElement("input"); rateI.type="number"; rateI.step="0.01"; rateI.value=c.value.toFixed(2);
+        const delB = document.createElement("button"); delB.textContent="Delete";
+        delB.addEventListener("click", function(){
+          if (!confirm("Delete category '" + c.label + "'? This removes it from the current night. Saved nights keep their snapshot.")) return;
+          CATEGORIES.splice(idx,1);
+          state.bowlers.forEach(b=>{ delete b.counts[c.key]; });
+          saveState(); saveCategories(CATEGORIES); render(); renderSettings();
+        });
+        nameI.addEventListener("input", function(){ c.label = nameI.value; });
+        rateI.addEventListener("input", function(){ c.value = parseFloat(rateI.value)||0; });
+        row.appendChild(nameI); row.appendChild(rateI); row.appendChild(delB);
+        settingsCats.appendChild(row);
+      });
+    }
+
+    addCatBtn.addEventListener("click", function(){
+      const base = "New Category";
+      let label = base; let i=1;
+      const used = new Set(CATEGORIES.map(c=>c.label.toLowerCase()));
+      while (used.has(label.toLowerCase())){ i+=1; label = base + " " + i; }
+      const key = slugify(label||("cat-"+Date.now()));
+      CATEGORIES.push({ key, label, value: 0.00 });
+      state.bowlers.forEach(b=>{ b.counts[key]=0; });
+      saveState(); saveCategories(CATEGORIES); render(); renderSettings();
+    });
+
+    resetCatsBtn.addEventListener("click", function(){
+      if (!confirm("Reset categories to defaults? This won't change saved nights.")) return;
+      CATEGORIES = DEFAULT_CATEGORIES.slice();
+      state.bowlers.forEach(function(b){
+        const newCounts = {}; CATEGORIES.forEach(c=>{ newCounts[c.key]= b.counts[c.key]||0; });
+        b.counts = newCounts;
+      });
+      saveCategories(CATEGORIES); saveState(); render(); renderSettings();
+    });
+
+    saveCatsBtn.addEventListener("click", function(){
+      if (!isValidCats(CATEGORIES) || CATEGORIES.length === 0){ alert("You must keep at least one category."); return; }
+      const keys = new Set(CATEGORIES.map(c=>c.key));
+      state.bowlers.forEach(function(b){ CATEGORIES.forEach(c=>{ if(!(c.key in b.counts)) b.counts[c.key]=0; }); });
+      saveCategories(CATEGORIES); saveState(); render();
+      alert("Settings saved.");
+    });
+
+    repairBtn.addEventListener("click", function(){
+      if (!confirm("Repair app data? This will reset categories to defaults and re-seed tonight's names/counters (archive stays intact).")) return;
+      localStorage.removeItem(CATS_KEY);
+      CATEGORIES = DEFAULT_CATEGORIES.slice();
+      state = seedState();
+      saveCategories(CATEGORIES); saveState();
+      alert("Repaired. Reloading UI.");
+      render(); renderSettings();
+    });
+
     titleInput.addEventListener("input", ()=>{ state.title = titleInput.value; saveState(); });
     saveNightBtn.addEventListener("click", saveNight);
     exportBtn.addEventListener("click", ()=>download((state.title||"dots")+".csv", buildCSV({ title: state.title, bowlers: state.bowlers, categories: CATEGORIES }), "text/csv;charset=utf-8;"));
