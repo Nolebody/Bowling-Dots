@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Bowling Dots — Tap Counter (PWA v9c)</title>
+<title>Bowling Dots — Tap Counter (PWA v9d)</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0a0a0a">
 <style>
@@ -49,7 +49,6 @@
   .namesRow { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
   .catRow { display:grid; grid-template-columns: 1fr 120px 90px; gap:8px; align-items:center; margin-bottom:8px; }
   .hint { font-size:12px; color:#a3a3a3; }
-  @media (max-width: 1200px) { .container { padding: 16px; } }
 </style>
 </head>
 <body>
@@ -57,7 +56,7 @@
     <header>
       <div style="display:flex; align-items:flex-end; gap:12px;">
         <h1 style="margin:0;">Bowling Dots — Tap Counter</h1>
-        <span class="version">v9c</span>
+        <span class="version">v9d</span>
       </div>
       <div class="muted">5‑man team • plus/minus taps • offline PWA • Archive • Totals • <b>Settings</b></div>
       <div class="toolbar">
@@ -315,7 +314,8 @@
 
           const count=document.createElement("div"); count.textContent=b.counts[c.key]||0; count.style.width="40px"; count.style.textAlign="center"; count.style.fontVariantNumeric="tabular-nums";
 
-          const plus=document.createElement("button"); plus.textContent="+"; plus.className="plus";
+          const plus=document.createElement("button"); plus.textContent="+";
+          plus.className="plus";
           plus.addEventListener("click", ()=>{ b.counts[c.key] = (b.counts[c.key]||0)+1; saveState(); render(); });
 
           box.appendChild(minus); box.appendChild(count); box.appendChild(plus);
@@ -385,11 +385,20 @@
     }
 
     function saveNight(){
+      // Snapshot to archive
       const night = JSON.parse(JSON.stringify(state));
       night.categories = JSON.parse(JSON.stringify(CATEGORIES));
       const archive = loadArchive(); archive.unshift(night); saveArchive(archive);
-      alert("Night saved to Archive.");
-      renderArchiveList();
+
+      // Auto-reset weekly counters and paid
+      state.bowlers.forEach(b=>{ CATEGORIES.forEach(c=> b.counts[c.key]=0); b.paid=0; });
+
+      // New title for the new week
+      const d = new Date(); state.title = "Dots — " + d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+
+      saveState();
+      render();
+      alert("Night saved to Archive. Starting a fresh week — balances carry in the Running Bal column.");
     }
 
     function renderArchiveList(){
@@ -436,14 +445,9 @@
       const nights = archive.slice();
       if (includeLive) nights.unshift(Object.assign({}, state, { categories: CATEGORIES }));
 
-      const catMap = new Map();
-      CATEGORIES.forEach(c => { catMap.set(c.key, { labelCurrent: c.label, labelFirst: c.label }); });
-      nights.forEach(function(n){
-        (n.categories||[]).forEach(function(c){
-          if (!catMap.has(c.key)) catMap.set(c.key, { labelCurrent: null, labelFirst: c.label });
-        });
-      });
-      const unionKeys = Array.from(catMap.keys());
+      const catKeys = new Set();
+      nights.forEach(n => (n.categories||CATEGORIES).forEach(c => catKeys.add(c.key)));
+      const unionKeys = Array.from(catKeys);
 
       const bowlerAgg = {};
       function norm(s){ return String(s||"").trim().toLowerCase(); }
@@ -470,8 +474,8 @@
       wrap.innerHTML = "";
       const t = document.createElement("table");
       const thead = document.createElement("thead");
-      var hdrs = ["Bowler"].concat(unionKeys.map(k=> (catMap.get(k).labelCurrent || catMap.get(k).labelFirst) + " (dots)"))
-                              .concat(unionKeys.map(k=> (catMap.get(k).labelCurrent || catMap.get(k).labelFirst) + " ($)"))
+      var hdrs = ["Bowler"].concat(unionKeys.map(k=> k + " (dots)"))
+                              .concat(unionKeys.map(k=> k + " ($)"))
                               .concat(["Subtotal","Paid","Balance"]);
       hdrs.forEach(function(h){ var th=document.createElement("th"); th.textContent=h; thead.appendChild(th); });
       t.appendChild(thead);
@@ -507,8 +511,7 @@
           });
         });
         var tr=document.createElement("tr");
-        var lab = catMap.get(k).labelCurrent || catMap.get(k).labelFirst || k;
-        var td1=document.createElement("td"); td1.textContent=lab; tr.appendChild(td1);
+        var td1=document.createElement("td"); td1.textContent=k; tr.appendChild(td1);
         var td2=document.createElement("td"); td2.className="center"; td2.textContent=dots; tr.appendChild(td2);
         var td3=document.createElement("td"); td3.className="num"; td3.textContent=currency(dollars); tr.appendChild(td3);
         tb2.appendChild(tr);
